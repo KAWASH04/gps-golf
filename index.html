@@ -244,7 +244,8 @@ h2{font-size:20px;margin:6px 0 12px}
     <div><label>ホール数</label><div class="seg" id="holesSeg"><button data-h="9">9ホール</button><button data-h="18">18ホール</button></div></div>
     <button class="danger" id="resetBtn">新しいラウンドを始める</button>
     <p class="note">記録はこの端末のブラウザに保存されます。新しいラウンドを始めると今の記録は消えます。</p>
-    <p class="note">航空写真：Esri, Maxar, Earthstar Geographics</p>
+    <p class="note">航空写真：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener" style="color:inherit">国土地理院</a>（全国最新写真・シームレス）</p>
+    <p class="note"><a href="privacy.html" style="color:inherit">プライバシーポリシー</a></p>
   </div>
 </section>
 
@@ -306,8 +307,9 @@ function initMap(){
   if(rot){map.on('rotate',()=>{updateCompass();clearTimeout(bearT);bearT=setTimeout(()=>{try{localStorage.setItem(KEY+':bearing',String(Math.round(map.getBearing())))}catch(e){}},400)})}
   else $('compassBtn').hidden=true;
   updateCompass();
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
-    maxNativeZoom:19,maxZoom:21,attribution:'Esri, Maxar, Earthstar Geographics'}).addTo(map);
+  L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',{
+    minZoom:5,maxNativeZoom:18,maxZoom:21,crossOrigin:true,
+    attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">出典：国土地理院</a>'}).addTo(map);
   shotLayer=L.layerGroup().addTo(map);
   tgtLayer=L.layerGroup().addTo(map);
   map.on('dragstart',()=>{follow=false;$('followBtn').setAttribute('aria-pressed','false')});
@@ -564,7 +566,7 @@ document.querySelector('.tabs').addEventListener('click',e=>{const b=e.target.cl
 let tt;function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2200)}
 
 /* ---------- ホール画像の書き出し ---------- */
-const TILE=(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+const TILE=(z,x,y)=>`https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/${z}/${x}/${y}.jpg`;
 function proj(lat,lng,z){
   const s=256*Math.pow(2,z), sin=Math.sin(lat*Math.PI/180);
   return {x:(lng+180)/360*s, y:(0.5-Math.log((1+sin)/(1-sin))/(4*Math.PI))*s};
@@ -616,11 +618,13 @@ async function buildHoleImage(){
   const c=cv.getContext('2d');
   c.fillStyle='#243528';c.fillRect(0,0,W,MH+foot);
 
-  const tx0=Math.floor(ox/256),tx1=Math.floor((ox+W)/256);
-  const ty0=Math.floor(oy/256),ty1=Math.floor((oy+MH)/256);
+  // 国土地理院の写真はズーム18まで。19で描くときは18のタイルを2倍に拡大する
+  const tz=Math.min(z,18), ts=256*Math.pow(2,z-tz);
+  const tx0=Math.floor(ox/ts),tx1=Math.floor((ox+W)/ts);
+  const ty0=Math.floor(oy/ts),ty1=Math.floor((oy+MH)/ts);
   const jobs=[];
   for(let tx=tx0;tx<=tx1;tx++)for(let ty=ty0;ty<=ty1;ty++){
-    jobs.push(loadTile(TILE(z,tx,ty)).then(im=>{if(im)c.drawImage(im,tx*256-ox,ty*256-oy);}));
+    jobs.push(loadTile(TILE(tz,tx,ty)).then(im=>{if(im)c.drawImage(im,tx*ts-ox,ty*ts-oy,ts,ts);}));
   }
   await Promise.all(jobs);
 
@@ -651,7 +655,7 @@ async function buildHoleImage(){
   c.fillStyle='#fff';c.font=`700 ${Math.round(foot*0.34)}px "Zen Kaku Gothic New",sans-serif`;
   c.fillText(`${S.cur+1}番  ${h.shots.length}打・${putts}パット（${ds}）`,20,MH+foot*0.44);
   c.fillStyle='#9DB0A2';c.font=`500 ${Math.round(foot*0.2)}px "Zen Kaku Gothic New",sans-serif`;
-  c.fillText(`${S.course||'ゴルフラウンド'}　Esri, Maxar, Earthstar Geographics`,20,MH+foot*0.78);
+  c.fillText(`${S.course||'ゴルフラウンド'}　出典：国土地理院`,20,MH+foot*0.78);
 
   return await new Promise(res=>cv.toBlob(b=>res(b),'image/png',0.92));
 }
