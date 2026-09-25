@@ -161,6 +161,10 @@ h2{font-size:20px;margin:6px 0 12px}
 .mm-close{background:rgba(255,255,255,.15);color:#fff}
 .imgmodal-hint{margin:0;color:#cfe0d3;font-size:13px;text-align:center}
 .mbtn.busy{opacity:.6}
+.askbox{background:var(--panel);color:var(--ink);border-radius:18px;padding:22px 18px 18px;max-width:380px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+.askbox .q{font-size:18px;font-weight:700;margin:0 0 4px}
+.askbox .s{font-size:14px;color:var(--sub);margin:0 0 18px}
+.askbox .mm-close{background:var(--chip);color:var(--ink)}
 .ov-cmp{top:46px;left:10px}
 .compass{display:flex;align-items:center;justify-content:center}
 .compass svg{width:30px;height:30px;transition:transform .15s}
@@ -242,6 +246,7 @@ h2{font-size:20px;margin:6px 0 12px}
     <div><label for="course">コース名</label><input id="course" placeholder="例：サンリゾートカントリークラブ"></div>
     <div><label>距離の単位</label><div class="seg" id="unitSeg"><button data-u="yd">ヤード</button><button data-u="m">メートル</button></div></div>
     <div><label>ホール数</label><div class="seg" id="holesSeg"><button data-h="9">9ホール</button><button data-h="18">18ホール</button></div></div>
+    <div><label>カップイン時に軌跡画像の保存を確認</label><div class="seg" id="askSeg"><button data-a="1">確認する</button><button data-a="0">確認しない</button></div></div>
     <button class="danger" id="resetBtn">新しいラウンドを始める</button>
     <p class="note">記録はこの端末のブラウザに保存されます。新しいラウンドを始めると今の記録は消えます。</p>
     <p class="note">航空写真：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener" style="color:inherit">国土地理院</a>（全国最新写真・シームレス）</p>
@@ -265,6 +270,16 @@ h2{font-size:20px;margin:6px 0 12px}
       <button class="mm-close" id="imgClose">閉じる</button>
     </div>
     <p class="imgmodal-hint">スマホでは画像を長押しして「写真に保存」もできます</p>
+  </div>
+</div>
+<div class="imgmodal" id="askModal" hidden role="dialog" aria-modal="true" aria-labelledby="askQ">
+  <div class="askbox">
+    <p class="q" id="askQ">軌跡画像を保存しますか？</p>
+    <p class="s" id="askS"></p>
+    <div class="imgmodal-bar">
+      <button class="mm-close" id="askNo">いいえ</button>
+      <button class="mm-share" id="askYes">はい</button>
+    </div>
   </div>
 </div>
 <div class="toast" id="toast" role="status"></div>
@@ -461,8 +476,11 @@ function cupIn(){
   const h=H();if(h.done)return;
   if(!h.shots.length){toast('まだショットがありません');return}
   finalize(h,true);h.done=true;
+  const doneIdx=S.cur;
   const d=h.shots.length-h.par;
-  toast(`${S.cur+1}番 ${h.shots.length}打（${d===0?'パー':d>0?'+'+d:d}）`);
+  const ds=d===0?'パー':d>0?'+'+d:String(d);
+  toast(`${S.cur+1}番 ${h.shots.length}打（${ds}）`);
+  if(S.askImg!==false&&h.shots.some(s=>!s.pen&&s.lat!=null))askSaveImage(doneIdx,`${doneIdx+1}番ホール　${h.shots.length}打（${ds}）`);
   if(S.cur<S.holes.length-1){S.cur++;S.club='1W'}
   target=null;drawTarget();follow=true;$('followBtn').setAttribute('aria-pressed','true');
   if(map&&pos)map.setView(ll(pos),18);
@@ -533,6 +551,7 @@ function renderSet(){
   $('course').value=S.course||'';
   [...$('unitSeg').children].forEach(b=>b.setAttribute('aria-pressed',b.dataset.u===S.unit));
   [...$('holesSeg').children].forEach(b=>b.setAttribute('aria-pressed',+b.dataset.h===S.holes.length));
+  [...$('askSeg').children].forEach(b=>b.setAttribute('aria-pressed',(b.dataset.a==='1')===(S.askImg!==false)));
 }
 
 /* ---------- イベント ---------- */
@@ -586,9 +605,9 @@ function pinMark(c,x,y,num,ob){
   c.textAlign='center';c.textBaseline='middle';c.fillText(num,x,y+1);
 }
 
-let curBlob=null;
-async function buildHoleImage(){
-  const h=H();
+let curBlob=null, curIdx=0;
+async function buildHoleImage(idx=S.cur){
+  const h=S.holes[idx];
   const pts=[];let n=0;
   h.shots.forEach(s=>{n++;if(s.pen||s.lat==null)return;pts.push({s,n});});
   if(!pts.length){toast('地図に記録された打点がありません');return;}
@@ -653,28 +672,49 @@ async function buildHoleImage(){
   const putts=h.shots.filter(s=>s.c==='PT').length;
   c.textAlign='left';c.textBaseline='alphabetic';
   c.fillStyle='#fff';c.font=`700 ${Math.round(foot*0.34)}px "Zen Kaku Gothic New",sans-serif`;
-  c.fillText(`${S.cur+1}番  ${h.shots.length}打・${putts}パット（${ds}）`,20,MH+foot*0.44);
+  c.fillText(`${idx+1}番  ${h.shots.length}打・${putts}パット（${ds}）`,20,MH+foot*0.44);
   c.fillStyle='#9DB0A2';c.font=`500 ${Math.round(foot*0.2)}px "Zen Kaku Gothic New",sans-serif`;
   c.fillText(`${S.course||'ゴルフラウンド'}　出典：国土地理院`,20,MH+foot*0.78);
 
   return await new Promise(res=>cv.toBlob(b=>res(b),'image/png',0.92));
 }
 
+async function showHoleImage(idx){
+  try{
+    const blob=await buildHoleImage(idx);
+    if(blob){curBlob=blob;curIdx=idx;$('imgOut').src=URL.createObjectURL(blob);$('imgModal').hidden=false;}
+  }catch(e){toast('画像を作れませんでした（電波の良い場所で再度お試しください）');}
+}
 async function saveHoleImage(){
   const btn=$('saveImgBtn');
   if(btn.classList.contains('busy'))return;
   btn.classList.add('busy');btn.textContent='…';
-  try{
-    const blob=await buildHoleImage();
-    if(blob){curBlob=blob;$('imgOut').src=URL.createObjectURL(blob);$('imgModal').hidden=false;}
-  }catch(e){toast('画像を作れませんでした（電波の良い場所で再度お試しください）');}
+  await showHoleImage(S.cur);
   btn.classList.remove('busy');btn.textContent='保存';
 }
+/* カップイン時の確認 */
+let askIdx=null;
+function askSaveImage(idx,summary){
+  askIdx=idx;
+  $('askQ').textContent=`${idx+1}番ホールの軌跡画像を保存しますか？`;
+  $('askS').textContent=summary;
+  $('askModal').hidden=false;
+  $('askYes').focus();
+}
+$('askNo').onclick=()=>{$('askModal').hidden=true;askIdx=null;};
+$('askYes').onclick=async()=>{
+  $('askModal').hidden=true;
+  if(askIdx===null)return;
+  const idx=askIdx;askIdx=null;
+  toast('画像を作成しています…');
+  await showHoleImage(idx);
+};
+$('askSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;S.askImg=b.dataset.a==='1';save();renderSet();};
 async function shareHoleImage(){
   if(!curBlob)return;
-  const file=new File([curBlob],`hole${S.cur+1}.png`,{type:'image/png'});
+  const file=new File([curBlob],`hole${curIdx+1}.png`,{type:'image/png'});
   if(navigator.canShare&&navigator.canShare({files:[file]})){
-    try{await navigator.share({files:[file],title:`${S.cur+1}番ホール`});return;}catch(e){if(e&&e.name==='AbortError')return;}
+    try{await navigator.share({files:[file],title:`${curIdx+1}番ホール`});return;}catch(e){if(e&&e.name==='AbortError')return;}
   }
   const a=document.createElement('a');a.href=URL.createObjectURL(curBlob);a.download=file.name;
   document.body.appendChild(a);a.click();a.remove();
