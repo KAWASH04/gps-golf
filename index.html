@@ -266,10 +266,11 @@ h2{font-size:20px;margin:6px 0 12px}
   <div class="imgmodal-inner">
     <img id="imgOut" alt="ホールの記録画像">
     <div class="imgmodal-bar">
-      <button class="mm-share" id="imgShare">保存・共有</button>
+      <button class="mm-share" id="imgSave">写真に保存</button>
+      <button class="mm-close" id="imgShare">共有</button>
       <button class="mm-close" id="imgClose">閉じる</button>
     </div>
-    <p class="imgmodal-hint">スマホでは画像を長押しして「写真に保存」もできます</p>
+    <p class="imgmodal-hint" id="imgHint">画像を長押しして「写真に保存」もできます</p>
   </div>
 </div>
 <div class="imgmodal" id="askModal" hidden role="dialog" aria-modal="true" aria-labelledby="askQ">
@@ -676,7 +677,7 @@ async function buildHoleImage(idx=S.cur){
   c.fillStyle='#9DB0A2';c.font=`500 ${Math.round(foot*0.2)}px "Zen Kaku Gothic New",sans-serif`;
   c.fillText(`${S.course||'ゴルフラウンド'}　出典：国土地理院`,20,MH+foot*0.78);
 
-  return await new Promise(res=>cv.toBlob(b=>res(b),'image/png',0.92));
+  return await new Promise(res=>cv.toBlob(b=>res(b),'image/jpeg',0.92));
 }
 
 async function showHoleImage(idx){
@@ -710,16 +711,49 @@ $('askYes').onclick=async()=>{
   await showHoleImage(idx);
 };
 $('askSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;S.askImg=b.dataset.a==='1';save();renderSet();};
+/* 写真アプリに入る形で保存（JPEG） */
+const IS_IOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+function imgName(){
+  const d=new Date(),z=n=>String(n).padStart(2,'0');
+  return `golf_${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}_hole${curIdx+1}.jpg`;
+}
+function imgFile(){return new File([curBlob],imgName(),{type:'image/jpeg'});}
+async function shareFile(file){
+  // titleやtextを付けるとiPhoneで「画像を保存」が出ないことがあるので、ファイルだけ渡す
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file]});return 'ok';}
+    catch(e){return e&&e.name==='AbortError'?'cancel':'fail';}
+  }
+  return 'fail';
+}
+function downloadFile(file){
+  const url=URL.createObjectURL(file);
+  const a=document.createElement('a');a.href=url;a.download=file.name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),10000);
+}
+async function saveToPhotos(){
+  if(!curBlob)return;
+  const file=imgFile();
+  if(IS_IOS){
+    // iPhone：共有シートの「画像を保存」で写真アプリに入る
+    toast('「画像を保存」を選ぶと写真アプリに入ります');
+    const r=await shareFile(file);
+    if(r==='fail')toast('画像を長押しして「写真に追加」を選んでください');
+    return;
+  }
+  // Android：端末に直接保存（Googleフォト／ギャラリーの「Download」に入る）
+  downloadFile(file);
+  toast('保存しました（フォト・ギャラリーの「Download」に入ります）');
+}
 async function shareHoleImage(){
   if(!curBlob)return;
-  const file=new File([curBlob],`hole${curIdx+1}.png`,{type:'image/png'});
-  if(navigator.canShare&&navigator.canShare({files:[file]})){
-    try{await navigator.share({files:[file],title:`${curIdx+1}番ホール`});return;}catch(e){if(e&&e.name==='AbortError')return;}
-  }
-  const a=document.createElement('a');a.href=URL.createObjectURL(curBlob);a.download=file.name;
-  document.body.appendChild(a);a.click();a.remove();
-  toast('画像を保存しました');
+  const file=imgFile();
+  const r=await shareFile(file);
+  if(r==='fail'){downloadFile(file);toast('共有できないため端末に保存しました');}
 }
+if(IS_IOS){$('imgShare').hidden=true;$('imgHint').textContent='画像を長押しして「写真に追加」でも保存できます';}
+$('imgSave').onclick=saveToPhotos;
 $('saveImgBtn').onclick=saveHoleImage;
 $('imgShare').onclick=shareHoleImage;
 $('imgClose').onclick=()=>{$('imgModal').hidden=true;};
