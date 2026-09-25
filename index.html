@@ -161,6 +161,9 @@ h2{font-size:20px;margin:6px 0 12px}
 .mm-close{background:rgba(255,255,255,.15);color:#fff}
 .imgmodal-hint{margin:0;color:#cfe0d3;font-size:13px;text-align:center}
 .mbtn.busy{opacity:.6}
+.ov-cmp{top:46px;left:10px}
+.compass{display:flex;align-items:center;justify-content:center}
+.compass svg{width:30px;height:30px;transition:transform .15s}
 </style>
 </head>
 <body>
@@ -186,6 +189,9 @@ h2{font-size:20px;margin:6px 0 12px}
       <button class="mbtn" id="followBtn" aria-pressed="true" aria-label="現在地に追従">現在地</button>
       <button class="mbtn" id="fitBtn" aria-label="このホールの打点を全体表示">全体</button>
       <button class="mbtn" id="saveImgBtn" aria-label="ホールの画像を保存">保存</button>
+    </div>
+    <div class="ov ov-cmp">
+      <button class="mbtn compass" id="compassBtn" aria-label="地図の向き（北を上に戻す／狙う方向を上にする）"><svg viewBox="0 0 30 30" id="compassIcon" aria-hidden="true"><path d="M15 3 20 15H10Z" fill="#D32F2F"/><path d="M15 27 10 15h10Z" fill="#8A9A8F"/><text x="15" y="13.5" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="Arial">N</text></svg></button>
     </div>
     <div class="ov ov-dist">
       <div class="l">
@@ -263,6 +269,7 @@ h2{font-size:20px;margin:6px 0 12px}
 <div class="toast" id="toast" role="status"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
 <script>
 const CLUBS=['1W','3W','5W','UT','4I','5I','6I','7I','8I','9I','PW','AW','SW','PT'];
 const KEY='gpsgolf:v1';
@@ -292,7 +299,13 @@ const ll=p=>[p.lat,p.lng];
 let map=null, meDot=null, meAcc=null, shotLayer=null, tgtLayer=null, target=null, follow=true, firstFix=true;
 function initMap(){
   if(!window.L){$('mapErr').hidden=false;return}
-  map=L.map('map',{zoomControl:false,tap:true}).setView([34.23,135.17],15);
+  const rot=!!(L.Map.prototype.setBearing);
+  let b0=0;try{b0=+localStorage.getItem(KEY+':bearing')||0}catch(e){}
+  map=L.map('map',{zoomControl:false,tap:true,
+    rotate:rot,touchRotate:rot,rotateControl:false,shiftKeyRotate:rot,bearing:rot?b0:0}).setView([34.23,135.17],15);
+  if(rot){map.on('rotate',()=>{updateCompass();clearTimeout(bearT);bearT=setTimeout(()=>{try{localStorage.setItem(KEY+':bearing',String(Math.round(map.getBearing())))}catch(e){}},400)})}
+  else $('compassBtn').hidden=true;
+  updateCompass();
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
     maxNativeZoom:19,maxZoom:21,attribution:'Esri, Maxar, Earthstar Geographics'}).addTo(map);
   shotLayer=L.layerGroup().addTo(map);
@@ -301,6 +314,25 @@ function initMap(){
   map.on('click',e=>{
     target={lat:e.latlng.lat,lng:e.latlng.lng};drawTarget();
   });
+}
+/* ---------- 地図の回転 ---------- */
+let bearT=null;
+const canRotate=()=>map&&typeof map.setBearing==='function'&&map._rotate;
+function updateCompass(){
+  const b=canRotate()?map.getBearing():0;
+  $('compassIcon').style.transform=`rotate(${b}deg)`;
+}
+function azimuth(a,b){ // aからbへの方位（北=0、時計回り）
+  const r=x=>x*Math.PI/180,dL=r(b.lng-a.lng);
+  const y=Math.sin(dL)*Math.cos(r(b.lat)),x=Math.cos(r(a.lat))*Math.sin(r(b.lat))-Math.sin(r(a.lat))*Math.cos(r(b.lat))*Math.cos(dL);
+  return Math.atan2(y,x)*180/Math.PI;
+}
+function compassTap(){
+  if(!canRotate())return;
+  const b=L.Util.wrapNum(map.getBearing(),[0,360]);
+  if(Math.min(b,360-b)>1){map.setBearing(0);toast('北を上に戻しました');return}
+  if(target&&pos){map.setBearing(-azimuth(pos,target));toast('狙う方向を上にしました');return}
+  toast('2本指でひねると回転／地点をタップしてからこのボタンで狙う方向が上になります');
 }
 function drawMe(){
   if(!map||!pos)return;
@@ -514,6 +546,7 @@ $('parBtn').onclick=()=>{const h=H();h.par=h.par===5?3:h.par+1;save();render()};
 $('gpsStart').onclick=startGPS;
 $('followBtn').onclick=()=>{follow=true;$('followBtn').setAttribute('aria-pressed','true');if(map&&pos)map.setView(ll(pos),Math.max(map.getZoom(),18));else toast('現在地を取得しています')};
 $('fitBtn').onclick=fitHole;
+$('compassBtn').onclick=compassTap;
 $('course').oninput=e=>{S.course=e.target.value;save()};
 $('unitSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;S.unit=b.dataset.u;save();renderSet();render();drawTarget()};
 $('holesSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;const n=+b.dataset.h;if(n===S.holes.length)return;
